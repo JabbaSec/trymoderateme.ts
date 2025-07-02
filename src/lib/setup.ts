@@ -22,6 +22,17 @@ declare module '@sapphire/pieces' {
 	}
 }
 
+declare module '@sapphire/framework' {
+	interface Preconditions {
+	  OwnerOnly: never;
+	  AdministratorOnly: never;
+	  ModeratorOnly: never;
+	  TrialModeratorOnly: never;
+	}
+  }
+  
+  export default undefined;
+
 // Read env var
 setup({ path: join(srcDir, '.env') });
 
