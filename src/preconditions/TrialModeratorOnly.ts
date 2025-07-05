@@ -2,9 +2,9 @@ import { Precondition } from '@sapphire/framework';
 import { MessageFlags } from 'discord.js';
 import type { CommandInteraction, ContextMenuCommandInteraction, Message, GuildMember } from 'discord.js';
 import { TrialModCheck } from '../lib/functions/TrialModCheck';
-import { ModeratorCheck } from '../lib/functions/ModeratorCheck';
-import { AdministratorCheck } from '../lib/functions/AdministratorCheck';
-import { OwnerCheck } from '../lib/functions/OwnerCheck';
+import { ModeratorCheck } from '../lib/functions/permissions/ModeratorCheck';
+import { AdministratorCheck } from '../lib/functions/permissions/AdministratorCheck';
+import { OwnerCheck } from '../lib/functions/permissions/OwnerCheck';
 
 /**
  * Allows only users who have a trial moderator, moderator, administrator role, or are bot owners.

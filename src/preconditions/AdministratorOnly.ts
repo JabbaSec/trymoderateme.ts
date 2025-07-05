@@ -1,8 +1,8 @@
 import { Precondition } from '@sapphire/framework';
 import { MessageFlags } from 'discord.js';
 import type { CommandInteraction, ContextMenuCommandInteraction, Message, GuildMember } from 'discord.js';
-import { AdministratorCheck } from '../lib/functions/AdministratorCheck';
-import { OwnerCheck } from '../lib/functions/OwnerCheck';
+import { AdministratorCheck } from '../lib/functions/permissions/AdministratorCheck';
+import { OwnerCheck } from '../lib/functions/permissions/OwnerCheck';
 
 /**
  * Allows only users who have an administrator role or are bot owners.

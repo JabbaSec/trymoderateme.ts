@@ -1,7 +1,7 @@
 import { Precondition } from '@sapphire/framework';
 import { MessageFlags } from 'discord.js';
 import type { CommandInteraction, ContextMenuCommandInteraction, Message } from 'discord.js';
-import { OwnerCheck } from '../lib/functions/OwnerCheck';
+import { OwnerCheck } from '../lib/functions/permissions/OwnerCheck';
 
 /**
  * Allows only users who are bot owners (from BOT_OWNER_IDS env).

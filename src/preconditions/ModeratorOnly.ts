@@ -1,9 +1,9 @@
 import { Precondition } from '@sapphire/framework';
 import { MessageFlags } from 'discord.js';
 import type { CommandInteraction, ContextMenuCommandInteraction, Message, GuildMember } from 'discord.js';
-import { AdministratorCheck } from '../lib/functions/AdministratorCheck';
-import { ModeratorCheck } from '../lib/functions/ModeratorCheck';
-import { OwnerCheck } from '../lib/functions/OwnerCheck';
+import { AdministratorCheck } from '../lib/functions/permissions/AdministratorCheck';
+import { ModeratorCheck } from '../lib/functions/permissions/ModeratorCheck';
+import { OwnerCheck } from '../lib/functions/permissions/OwnerCheck';
 
 /**
  * Allows only users who are the guild owner, a bot owner, have an admin role, or have a moderator role.
