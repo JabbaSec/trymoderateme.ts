@@ -1,7 +1,7 @@
 import { Precondition } from '@sapphire/framework';
 import { MessageFlags } from 'discord.js';
 import type { CommandInteraction, ContextMenuCommandInteraction, Message, GuildMember } from 'discord.js';
-import { TrialModCheck } from '../lib/functions/TrialModCheck';
+import { TrialModCheck } from '../lib/functions/permissions/TrialModCheck';
 import { ModeratorCheck } from '../lib/functions/permissions/ModeratorCheck';
 import { AdministratorCheck } from '../lib/functions/permissions/AdministratorCheck';
 import { OwnerCheck } from '../lib/functions/permissions/OwnerCheck';
