@@ -1,9 +1,10 @@
 import { Subcommand } from '@sapphire/plugin-subcommands';
 import { container } from '@sapphire/framework';
-import { MessageFlags, escapeMarkdown, EmbedBuilder } from 'discord.js';
+import { MessageFlags, EmbedBuilder } from 'discord.js';
 import { PaginatedMessage } from '@sapphire/discord.js-utilities';
 import { sendModLog, ModLogType } from '../../lib/utils/modLogger';
 import { ModerationErrorHandler } from '../../lib/utils/errorHandler';
+import { InputSanitizer } from '../../lib/utils/sanitizer';
 
 const MODS_CHANNEL_ID = process.env.MODS_CHANNEL_ID;
 
@@ -87,15 +88,19 @@ export class NoteCommand extends Subcommand {
       return interaction.reply({ content: targetValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
-    // Sanitize content
-    content = escapeMarkdown(content).replace(/<@!?\d+>/g, '[mention removed]').trim();
+    // Sanitize content for storage and display
+    const sanitizedContent = InputSanitizer.sanitizeForStorage(content);
+    const displayContent = InputSanitizer.sanitizeText(content);
+    const sanitizedUserTag = InputSanitizer.sanitizeUserTag(targetUser.tag);
+    const sanitizedModeratorTag = InputSanitizer.sanitizeUserTag(moderator.tag);
+    const sanitizedGuildName = InputSanitizer.sanitizeGuildName(guild!.name);
 
     try {
       // Ensure the guild exists
       await container.prisma.guild.upsert({
         where: { id: guild!.id },
         update: {},
-        create: { id: guild!.id, name: guild!.name ?? undefined }
+        create: { id: guild!.id, name: sanitizedGuildName }
       });
 
       // Ensure the user exists
@@ -105,12 +110,12 @@ export class NoteCommand extends Subcommand {
         create: { id: targetUser.id, guildId: guild!.id }
       });
 
-      // Store the note
+      // Store the note with sanitized content
       const note = await container.prisma.note.create({
         data: {
           userId: targetUser.id,
           guildId: guild!.id,
-          content,
+          content: sanitizedContent,
           createdBy: moderator.id,
         },
       });
@@ -120,19 +125,19 @@ export class NoteCommand extends Subcommand {
         guild: guild!,
         type: ModLogType.Note,
         targetUserId: targetUser.id,
-        targetTag: targetUser.tag,
+        targetTag: sanitizedUserTag,
         moderatorId: moderator.id,
-        moderatorTag: moderator.tag,
-        reason: content,
+        moderatorTag: sanitizedModeratorTag,
+        reason: displayContent,
         caseId: note.id
       });
 
       container.logger.info(
-        `Note added: [ID: ${note.id}] User: ${targetUser.tag} (${targetUser.id}) in Guild: ${guild!.id} by Moderator: ${moderator.tag} (${moderator.id}) Content: ${content}`
+        `Note added: [ID: ${note.id}] User: ${sanitizedUserTag} (${targetUser.id}) in Guild: ${guild!.id} by Moderator: ${sanitizedModeratorTag} (${moderator.id}) Content: ${InputSanitizer.sanitizeForLogging(content)}`
       );
 
       return interaction.reply({
-        content: `Note added for ${targetUser.tag} (ID: ${note.id}) for: ${content}`,
+        content: `Note added for ${sanitizedUserTag} (ID: ${note.id}) for: ${displayContent}`,
         allowedMentions: { users: [targetUser.id] },
         ...(responseFlags && { flags: responseFlags })
       });
@@ -157,22 +162,26 @@ export class NoteCommand extends Subcommand {
       return interaction.reply({ content: guildValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
-    // Validate note ID
-    const idValidation = ModerationErrorHandler.validateId(noteId);
+    // Validate and sanitize note ID
+    const idValidation = InputSanitizer.validateId(noteId);
     if (!idValidation.isValid) {
-      return interaction.reply({ content: idValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
+      return interaction.reply({ content: 'Invalid note ID. Please provide a valid positive number.', ...(responseFlags && { flags: responseFlags }) });
     }
+
+    // Sanitize reason
+    const sanitizedReason = InputSanitizer.sanitizeText(reason);
+    const sanitizedModeratorTag = InputSanitizer.sanitizeUserTag(interaction.user.tag);
 
     try {
       // Find the note
       const note = await container.prisma.note.findUnique({
-        where: { id: noteId },
+        where: { id: idValidation.sanitizedId },
       });
       
       if (!note) {
-        container.logger.warn(`Tried to remove non-existent note ID: ${noteId} in guild ${guild!.id}`);
+        container.logger.warn(`Tried to remove non-existent note ID: ${idValidation.sanitizedId} in guild ${guild!.id}`);
         return interaction.reply({ 
-          content: `No note found with ID ${noteId}.`, 
+          content: `No note found with ID ${idValidation.sanitizedId}.`, 
           ...(responseFlags && { flags: responseFlags })
         });
       }
@@ -184,27 +193,31 @@ export class NoteCommand extends Subcommand {
       }
 
       // Remove the note
-      await container.prisma.note.delete({ where: { id: noteId } });
+      await container.prisma.note.delete({ where: { id: idValidation.sanitizedId } });
+
+      // Get user info for logging
+      const user = await interaction.client.users.fetch(note.userId);
+      const sanitizedUserTag = InputSanitizer.sanitizeUserTag(user.tag);
 
       // Log to mod log channel
       await sendModLog({
         guild: guild!,
         type: ModLogType.NoteRemoved,
         targetUserId: note.userId,
-        targetTag: (await interaction.client.users.fetch(note.userId)).tag,
+        targetTag: sanitizedUserTag,
         moderatorId: interaction.user.id,
-        moderatorTag: interaction.user.tag,
-        reason,
+        moderatorTag: sanitizedModeratorTag,
+        reason: sanitizedReason,
         caseId: note.id
       });
 
       container.logger.info(
-        `Note removed: [ID: ${note.id}] User: ${note.userId} in Guild: ${guild!.id}`
+        `Note removed: [ID: ${note.id}] User: ${sanitizedUserTag} (${note.userId}) in Guild: ${guild!.id}`
       );
 
-      return interaction.reply({ content: `Note ID ${noteId} removed.`, ...(responseFlags && { flags: responseFlags }) });
+      return interaction.reply({ content: `Note ID ${idValidation.sanitizedId} removed.`, ...(responseFlags && { flags: responseFlags }) });
     } catch (err) {
-      const errorMessage = ModerationErrorHandler.handlePrismaError(err, 'removing the note', noteId);
+      const errorMessage = ModerationErrorHandler.handlePrismaError(err, 'removing the note', idValidation.sanitizedId);
       return interaction.reply({
         content: errorMessage,
         ...(responseFlags && { flags: responseFlags })
@@ -230,15 +243,17 @@ export class NoteCommand extends Subcommand {
       });
 
       if (!notes.length) {
-        container.logger.info(`No notes found for user ${targetUser.tag} (${targetUser.id}) in guild ${guild!.id}`);
-        return interaction.reply({ content: `${targetUser.tag} has no notes in this server.`, ...(responseFlags && { flags: responseFlags }) });
+        const sanitizedUserTag = InputSanitizer.sanitizeUserTag(targetUser.tag);
+        container.logger.info(`No notes found for user ${sanitizedUserTag} (${targetUser.id}) in guild ${guild!.id}`);
+        return interaction.reply({ content: `${sanitizedUserTag} has no notes in this server.`, ...(responseFlags && { flags: responseFlags }) });
       }
 
       // Create paginated message
+      const sanitizedUserTag = InputSanitizer.sanitizeUserTag(targetUser.tag);
       const paginatedMessage = new PaginatedMessage({
         template: new EmbedBuilder()
           .setColor('#FEE75C')
-          .setTitle(`Notes for ${targetUser.tag}`)
+          .setTitle(`Notes for ${sanitizedUserTag}`)
           .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
           .setFooter({ text: `Total notes: ${notes.length}` })
       });
@@ -251,7 +266,7 @@ export class NoteCommand extends Subcommand {
         paginatedMessage.addPageEmbed((embed) => {
           const noteFields = pageNotes.map((note: { id: number; createdAt: Date; content: string }) => ({
             name: `Note #${note.id}`,
-            value: `**Date:** <t:${Math.floor(note.createdAt.getTime() / 1000)}:f>\n**Content:** ${escapeMarkdown(note.content)}`,
+            value: `**Date:** <t:${Math.floor(note.createdAt.getTime() / 1000)}:f>\n**Content:** ${InputSanitizer.sanitizeText(note.content)}`,
             inline: false
           }));
 
@@ -261,7 +276,7 @@ export class NoteCommand extends Subcommand {
       }
 
       container.logger.info(
-        `Viewed notes for user ${targetUser.tag} (${targetUser.id}) in guild ${guild!.id}`
+        `Viewed notes for user ${sanitizedUserTag} (${targetUser.id}) in guild ${guild!.id}`
       );
 
       // Run the paginated message
