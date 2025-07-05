@@ -1,7 +1,8 @@
 // Make sure to install @sapphire/plugin-subcommands
 import { Subcommand } from '@sapphire/plugin-subcommands';
 import { container } from '@sapphire/framework';
-import { MessageFlags, escapeMarkdown } from 'discord.js';
+import { MessageFlags, escapeMarkdown, EmbedBuilder } from 'discord.js';
+import { PaginatedMessage } from '@sapphire/discord.js-utilities';
 import { sendModLog, ModLogType } from '../../lib/utils/modLogger';
 
 export class WarningCommand extends Subcommand {
@@ -256,12 +257,39 @@ export class WarningCommand extends Subcommand {
         return interaction.reply({ content: `${targetUser.tag} has no warnings in this server.`, flags: MessageFlags.Ephemeral });
       }
 
-      const lines = warnings.map((w: { id: number; createdAt: Date; reason: string }) => `**ID:** ${w.id} | **Date:** <t:${Math.floor(w.createdAt.getTime() / 1000)}:f>\n**Reason:** ${escapeMarkdown(w.reason)}`);
-      const content = `Warnings for ${targetUser.tag} (${warnings.length}):\n\n${lines.join('\n\n')}`;
+      // Create paginated message
+      const paginatedMessage = new PaginatedMessage({
+        template: new EmbedBuilder()
+          .setColor('#FAA81A')
+          .setTitle(`Warnings for ${targetUser.tag}`)
+          .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
+          .setFooter({ text: `Total warnings: ${warnings.length}` })
+      });
+
+      // Add pages for each warning (max 5 warnings per page)
+      const warningsPerPage = 5;
+      for (let i = 0; i < warnings.length; i += warningsPerPage) {
+        const pageWarnings = warnings.slice(i, i + warningsPerPage);
+        
+        paginatedMessage.addPageEmbed((embed) => {
+          const warningFields = pageWarnings.map((warning: { id: number; createdAt: Date; reason: string }) => ({
+            name: `Warning #${warning.id}`,
+            value: `**Date:** <t:${Math.floor(warning.createdAt.getTime() / 1000)}:f>\n**Reason:** ${escapeMarkdown(warning.reason)}`,
+            inline: false
+          }));
+
+          embed.addFields(warningFields);
+          return embed;
+        });
+      }
+
       container.logger.info(
         `Viewed warnings for user ${targetUser.tag} (${targetUser.id}) in guild ${guild.id}`
       );
-      return interaction.reply({ content });
+
+      // Run the paginated message
+      await paginatedMessage.run(interaction);
+      return;
     } catch (err) {
       container.logger.error(`Failed to view warnings: ${err}`);
       return interaction.reply({

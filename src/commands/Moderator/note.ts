@@ -1,8 +1,11 @@
 import { Subcommand } from '@sapphire/plugin-subcommands';
 import { container } from '@sapphire/framework';
-import { MessageFlags, escapeMarkdown } from 'discord.js';
+import { MessageFlags, escapeMarkdown, EmbedBuilder } from 'discord.js';
+import { PaginatedMessage } from '@sapphire/discord.js-utilities';
 import { sendModLog, ModLogType } from '../../lib/utils/modLogger';
 import { ModerationErrorHandler } from '../../lib/utils/errorHandler';
+
+const MODS_CHANNEL_ID = process.env.MODS_CHANNEL_ID;
 
 export class NoteCommand extends Subcommand {
   public constructor(context: Subcommand.LoaderContext, options: Subcommand.Options) {
@@ -57,22 +60,31 @@ export class NoteCommand extends Subcommand {
     );
   }
 
+  private isModsChannel(channelId: string): boolean {
+    return MODS_CHANNEL_ID ? channelId === MODS_CHANNEL_ID : false;
+  }
+
+  private getResponseFlags(channelId: string): MessageFlags.Ephemeral | undefined {
+    return this.isModsChannel(channelId) ? undefined : MessageFlags.Ephemeral;
+  }
+
   public async chatInputAdd(interaction: Subcommand.ChatInputCommandInteraction) {
     const targetUser = interaction.options.getUser('user', true);
     let content = interaction.options.getString('content', true);
     const moderator = interaction.user;
     const guild = interaction.guild;
+    const responseFlags = this.getResponseFlags(interaction.channelId);
 
     // Validate guild context
     const guildValidation = ModerationErrorHandler.validateGuildContext(guild, 'add a note');
     if (!guildValidation.isValid) {
-      return interaction.reply({ content: guildValidation.errorMessage, flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: guildValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
     // Validate target
     const targetValidation = ModerationErrorHandler.validateTarget(targetUser.id, moderator.id, targetUser, 'add a note to');
     if (!targetValidation.isValid) {
-      return interaction.reply({ content: targetValidation.errorMessage, flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: targetValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
     // Sanitize content
@@ -122,12 +134,13 @@ export class NoteCommand extends Subcommand {
       return interaction.reply({
         content: `Note added for ${targetUser.tag} (ID: ${note.id}) for: ${content}`,
         allowedMentions: { users: [targetUser.id] },
+        ...(responseFlags && { flags: responseFlags })
       });
     } catch (err) {
       const errorMessage = ModerationErrorHandler.handlePrismaError(err, 'adding the note');
       return interaction.reply({
         content: errorMessage,
-        flags: MessageFlags.Ephemeral
+        ...(responseFlags && { flags: responseFlags })
       });
     }
   }
@@ -136,17 +149,18 @@ export class NoteCommand extends Subcommand {
     const noteId = interaction.options.getInteger('id', true);
     const reason = interaction.options.getString('reason', true);
     const guild = interaction.guild;
+    const responseFlags = this.getResponseFlags(interaction.channelId);
 
     // Validate guild context
     const guildValidation = ModerationErrorHandler.validateGuildContext(guild, 'remove a note');
     if (!guildValidation.isValid) {
-      return interaction.reply({ content: guildValidation.errorMessage, flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: guildValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
     // Validate note ID
     const idValidation = ModerationErrorHandler.validateId(noteId);
     if (!idValidation.isValid) {
-      return interaction.reply({ content: idValidation.errorMessage, flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: idValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
     try {
@@ -159,14 +173,14 @@ export class NoteCommand extends Subcommand {
         container.logger.warn(`Tried to remove non-existent note ID: ${noteId} in guild ${guild!.id}`);
         return interaction.reply({ 
           content: `No note found with ID ${noteId}.`, 
-          flags: MessageFlags.Ephemeral 
+          ...(responseFlags && { flags: responseFlags })
         });
       }
 
       // Check if the note belongs to this guild
       const ownershipValidation = ModerationErrorHandler.validateGuildOwnership(note.guildId, guild!.id, 'note');
       if (!ownershipValidation.isValid) {
-        return interaction.reply({ content: ownershipValidation.errorMessage, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: ownershipValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
       }
 
       // Remove the note
@@ -188,12 +202,12 @@ export class NoteCommand extends Subcommand {
         `Note removed: [ID: ${note.id}] User: ${note.userId} in Guild: ${guild!.id}`
       );
 
-      return interaction.reply({ content: `Note ID ${noteId} removed.` });
+      return interaction.reply({ content: `Note ID ${noteId} removed.`, ...(responseFlags && { flags: responseFlags }) });
     } catch (err) {
       const errorMessage = ModerationErrorHandler.handlePrismaError(err, 'removing the note', noteId);
       return interaction.reply({
         content: errorMessage,
-        flags: MessageFlags.Ephemeral
+        ...(responseFlags && { flags: responseFlags })
       });
     }
   }
@@ -201,11 +215,12 @@ export class NoteCommand extends Subcommand {
   public async chatInputView(interaction: Subcommand.ChatInputCommandInteraction) {
     const targetUser = interaction.options.getUser('user', true);
     const guild = interaction.guild;
+    const responseFlags = this.getResponseFlags(interaction.channelId);
 
     // Validate guild context
     const guildValidation = ModerationErrorHandler.validateGuildContext(guild, 'view notes');
     if (!guildValidation.isValid) {
-      return interaction.reply({ content: guildValidation.errorMessage, flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: guildValidation.errorMessage, ...(responseFlags && { flags: responseFlags }) });
     }
 
     try {
@@ -216,20 +231,47 @@ export class NoteCommand extends Subcommand {
 
       if (!notes.length) {
         container.logger.info(`No notes found for user ${targetUser.tag} (${targetUser.id}) in guild ${guild!.id}`);
-        return interaction.reply({ content: `${targetUser.tag} has no notes in this server.`, flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: `${targetUser.tag} has no notes in this server.`, ...(responseFlags && { flags: responseFlags }) });
       }
 
-      const lines = notes.map((n: { id: number; createdAt: Date; content: string }) => `**ID:** ${n.id} | **Date:** <t:${Math.floor(n.createdAt.getTime() / 1000)}:f>\n**Note:** ${escapeMarkdown(n.content)}`);
-      const content = `Notes for ${targetUser.tag} (${notes.length}):\n\n${lines.join('\n\n')}`;
+      // Create paginated message
+      const paginatedMessage = new PaginatedMessage({
+        template: new EmbedBuilder()
+          .setColor('#FEE75C')
+          .setTitle(`Notes for ${targetUser.tag}`)
+          .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
+          .setFooter({ text: `Total notes: ${notes.length}` })
+      });
+
+      // Add pages for each note (max 5 notes per page)
+      const notesPerPage = 5;
+      for (let i = 0; i < notes.length; i += notesPerPage) {
+        const pageNotes = notes.slice(i, i + notesPerPage);
+        
+        paginatedMessage.addPageEmbed((embed) => {
+          const noteFields = pageNotes.map((note: { id: number; createdAt: Date; content: string }) => ({
+            name: `Note #${note.id}`,
+            value: `**Date:** <t:${Math.floor(note.createdAt.getTime() / 1000)}:f>\n**Content:** ${escapeMarkdown(note.content)}`,
+            inline: false
+          }));
+
+          embed.addFields(noteFields);
+          return embed;
+        });
+      }
+
       container.logger.info(
         `Viewed notes for user ${targetUser.tag} (${targetUser.id}) in guild ${guild!.id}`
       );
-      return interaction.reply({ content });
+
+      // Run the paginated message
+      await paginatedMessage.run(interaction);
+      return;
     } catch (err) {
       const errorMessage = ModerationErrorHandler.handlePrismaError(err, 'viewing notes');
       return interaction.reply({
         content: errorMessage,
-        flags: MessageFlags.Ephemeral
+        ...(responseFlags && { flags: responseFlags })
       });
     }
   }
