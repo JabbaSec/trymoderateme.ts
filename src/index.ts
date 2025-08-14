@@ -19,7 +19,7 @@ const client = new SapphireClient({
 
 const main = async () => {
 	try {
-		client.logger.info(`Connecting to ${client.user?.username}`);
+		client.logger.info(`Connecting to client...`);
 		await client.login();
 		client.logger.info(`Successfully connected to ${client.user?.username}`);
 	} catch (error) {
